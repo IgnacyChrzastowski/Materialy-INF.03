@@ -1293,3 +1293,259 @@
 ---
 
 *Powyższa notatka stanowi zbiór najważniejszych zagadnień i przykładów w PHP. Dzięki niej opanujesz podstawy języka, pracę z formularzami, bazami danych, sesjami oraz elementy bezpieczeństwa – co z pewnością pomoże na egzaminie INF.03!*
+
+
+
+Poniżej znajduje się kompletny, przykładowy skrypt PHP, który w jednym pliku:
+
+1. Łączy się z bazą danych MySQL (używając rozszerzenia **mysqli**).
+2. Wczytuje wszystkie rekordy z wybranej tabeli i wyświetla je w HTML-owej tabeli.
+3. Zawiera formularz HTML do dodawania nowych rekordów do tej tabeli.
+4. Obsługuje zapis przesłanych danych (metodą POST) do bazy.
+
+---
+
+## Założenia
+
+* Baza danych: `moja_baza`
+* Tabela: `users`
+* Struktura tabeli `users` (przykładowo):
+
+  ```sql
+  CREATE TABLE `users` (
+    `id` INT NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(100) NOT NULL,
+    `email` VARCHAR(100) NOT NULL,
+    PRIMARY KEY (`id`)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  ```
+* Skrypt zapisujemy jako np. `index.php` w katalogu obsługiwanym przez serwer (np. `htdocs` lub `www`).
+
+Poniższy kod można skopiować do pliku `index.php` i dostosować dane dostępowe (host, użytkownik, hasło, nazwa bazy).
+
+```php
+<?php
+// index.php
+
+// -------------------------------------------
+// 1. Dane dostępowe do bazy danych
+// -------------------------------------------
+$host     = 'localhost';      // adres serwera MySQL (zwykle 'localhost')
+$db_user  = 'root';           // nazwa użytkownika bazy
+$db_pass  = '';               // hasło do bazy
+$db_name  = 'moja_baza';      // nazwa bazy danych
+
+// -------------------------------------------
+// 2. Utworzenie połączenia z bazą (mysqli)
+// -------------------------------------------
+$conn = new mysqli($host, $db_user, $db_pass, $db_name);
+
+// Sprawdzenie, czy połączenie powiodło się
+if ($conn->connect_error) {
+    die("Błąd połączenia z bazą: " . $conn->connect_error);
+}
+$conn->set_charset("utf8mb4"); // ustawienie kodowania na UTF-8
+
+// -------------------------------------------
+// 3. Obsługa przesłanego formularza (metoda POST)
+// -------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Pobranie wartości z formularza (bezpieczniejsza metoda: filtracja/escape)
+    $name  = trim($_POST['name']);
+    $email = trim($_POST['email']);
+
+    // Prosta walidacja: sprawdź, czy pola nie są puste
+    if (!empty($name) && !empty($email)) {
+        // Przygotowanie zapytania z parametrami (prepared statement)
+        $stmt = $conn->prepare("INSERT INTO users (name, email) VALUES (?, ?)");
+        $stmt->bind_param("ss", $name, $email);
+
+        if ($stmt->execute()) {
+            // Po poprawnym dodaniu rekordu przekierowujemy z powrotem (aby uniknąć ponownego wysłania formularza przy odświeżeniu)
+            header("Location: " . $_SERVER['PHP_SELF']);
+            exit;
+        } else {
+            $error_msg = "Błąd przy dodawaniu rekordu: " . $stmt->error;
+        }
+
+        $stmt->close();
+    } else {
+        $error_msg = "Proszę wypełnić oba pola.";
+    }
+}
+
+// -------------------------------------------
+// 4. Pobranie wszystkich rekordów z tabeli
+// -------------------------------------------
+$sql    = "SELECT id, name, email FROM users ORDER BY id DESC";
+$result = $conn->query($sql);
+
+?>
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Lista użytkowników i dodawanie nowych</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        table {
+            width: 60%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+        table, th, td {
+            border: 1px solid #666;
+        }
+        th, td {
+            padding: 8px 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #eee;
+        }
+        .error {
+            color: red;
+            margin-bottom: 15px;
+        }
+        form {
+            width: 300px;
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+        }
+        input[type="text"], input[type="email"] {
+            width: 100%;
+            padding: 6px;
+            box-sizing: border-box;
+        }
+        input[type="submit"] {
+            margin-top: 15px;
+            padding: 8px 12px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Lista użytkowników</h1>
+
+    <?php if (isset($error_msg)): ?>
+        <div class="error"><?= htmlspecialchars($error_msg, ENT_QUOTES, 'UTF-8') ?></div>
+    <?php endif; ?>
+
+    <!-- Tabela z rekordami -->
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Imię</th>
+                <th>Email</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php if ($result && $result->num_rows > 0): ?>
+                <?php while ($row = $result->fetch_assoc()): ?>
+                    <tr>
+                        <td><?= htmlspecialchars($row['id'], ENT_QUOTES, 'UTF-8') ?></td>
+                        <td><?= htmlspecialchars($row['name'], ENT_QUOTES, 'UTF-8') ?></td>
+                        <td><?= htmlspecialchars($row['email'], ENT_QUOTES, 'UTF-8') ?></td>
+                    </tr>
+                <?php endwhile; ?>
+            <?php else: ?>
+                <tr>
+                    <td colspan="3">Brak rekordów w bazie.</td>
+                </tr>
+            <?php endif; ?>
+        </tbody>
+    </table>
+
+    <!-- Formularz do dodawania nowych rekordów -->
+    <h2>Dodaj nowego użytkownika</h2>
+    <form action="<?= htmlspecialchars($_SERVER['PHP_SELF'], ENT_QUOTES, 'UTF-8') ?>" method="post">
+        <label for="name">Imię i nazwisko:</label>
+        <input type="text" id="name" name="name" required>
+
+        <label for="email">Email:</label>
+        <input type="email" id="email" name="email" required>
+
+        <input type="submit" value="Dodaj">
+    </form>
+
+</body>
+</html>
+<?php
+// -------------------------------------------
+// 5. Zamknięcie połączenia z bazą
+// -------------------------------------------
+$conn->close();
+?>
+```
+
+---
+
+### Krótkie omówienie poszczególnych fragmentów:
+
+1. **Dane dostępowe i połączenie z bazą**
+   Na początku definiujemy zmienne `$host`, `$db_user`, `$db_pass`, `$db_name`, a następnie tworzymy nowe połączenie `$conn = new mysqli(...)`. Sprawdzamy, czy nie wystąpił błąd (`$conn->connect_error`) i ustawiamy kodowanie na UTF-8.
+
+2. **Obsługa formularza (metoda POST)**
+
+   * Jeśli formularz został przesłany (`$_SERVER['REQUEST_METHOD'] === 'POST'`), zaczytujemy wartości `$_POST['name']` oraz `$_POST['email']`.
+   * Sprawdzamy, czy oba pola nie są puste.
+   * Korzystamy z **prepared statement** (`$conn->prepare(...)`), aby bezpiecznie wstawić dane do tabeli `users`.
+   * Po udanym wstawieniu przekierowujemy przeglądarkę z powrotem na ten sam plik (żeby uniknąć ponownego wysłania danych przy odświeżeniu).
+
+3. **Pobieranie rekordów z tabeli**
+
+   * Wykonujemy zapytanie `SELECT id, name, email FROM users ORDER BY id DESC`.
+   * Wynik zapytania zapisujemy w `$result`.
+   * W HTML-u w sekcji `<tbody>` iterujemy po `$result->fetch_assoc()` i wyświetlamy wszystkie wiersze w tabeli.
+
+4. **Formularz HTML**
+
+   * Formularz ma dwa pola: tekstowe dla imienia (name="name") i email (name="email").
+   * Pola oznaczone jako `required`, więc przeglądarka nie wyśle formularza, jeśli pozostaną puste.
+
+5. **Bezpieczeństwo wyświetlania**
+
+   * Przy echo każdej wartości z bazy stosujemy `htmlspecialchars(..., ENT_QUOTES, 'UTF-8')`, aby uniknąć potencjalnego ataku XSS.
+
+6. **Zamknięcie połączenia**
+
+   * Po wygenerowaniu całego HTML-a zamykamy połączenie z bazą: `$conn->close();`.
+
+---
+
+### Jak uruchomić
+
+1. **Utwórz bazę i tabelę** (jeśli jeszcze nie istnieją). Przykład w MySQL:
+
+   ```sql
+   CREATE DATABASE moja_baza CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   USE moja_baza;
+
+   CREATE TABLE users (
+     id INT NOT NULL AUTO_INCREMENT,
+     name VARCHAR(100) NOT NULL,
+     email VARCHAR(100) NOT NULL,
+     PRIMARY KEY (id)
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+   ```
+2. **Wstaw plik `index.php`** do katalogu swojego serwera WWW (np. `C:\xampp\htdocs\` w XAMPP czy `/var/www/html/` w Linux/Apache).
+3. **Dostosuj dane dostępowe** (host, użytkownik, hasło, nazwa bazy) w nagłówku pliku PHP.
+4. **Otwórz w przeglądarce** adres `http://localhost/index.php` (lub odpowiednio, jeśli masz inny wirtualny host).
+
+Po wejściu na stronę zobaczysz listę wszystkich użytkowników z tabeli `users` (jeśli są rekordy), a pod nią formularz do dodawania nowych wpisów. Po wypełnieniu formularza i kliknięciu „Dodaj” zostaniesz przekierowany z powrotem na tę samą stronę, a nowy rekord pojawi się w tabeli.
+
+---
+
+W razie potrzeby możesz zmodyfikować:
+
+* Nazwy tabeli i kolumn (np. `products(name, price)`, jeśli chcesz inną tabelę).
+* Stylowanie CSS (wbudowane w `<style>` w nagłówku) według własnych potrzeb.
+* Sposób walidacji lub dodatkowe pola w formularzu (np. `tel`, `textarea` itd.).
+
+To pełny, minimalny przykład, który można dowolnie rozbudowywać (np. obsługa edycji, usuwania czy paginacji).
